@@ -203,18 +203,17 @@ class GUIHandler : IUserInterface {
 				message.append("</font></li>")
 			}
 			message.append("</ul><br>" +
-					"Would you like to update the versions, launch without updating, or cancel the launch?")
+					"Would you like to update the versions or cancel the launch?")
 
 
-			val options = arrayOf("Cancel", "Continue anyways", "Update")
+			val options = arrayOf("Cancel", "Update")
 			val result = JOptionPane.showOptionDialog(frmPackwizlauncher, message,
 					"Updating MultiMC versions",
-					JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[2])
+					JOptionPane.YES_NO_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, options[1])
 			future.complete(
 				when (result) {
 					JOptionPane.CLOSED_OPTION, 0 -> IUserInterface.UpdateConfirmationResult.CANCELLED
-					1 -> IUserInterface.UpdateConfirmationResult.CONTINUE
-					2 -> IUserInterface.UpdateConfirmationResult.UPDATE
+					1 -> IUserInterface.UpdateConfirmationResult.UPDATE
 					else -> IUserInterface.UpdateConfirmationResult.CANCELLED
 				}
 			)

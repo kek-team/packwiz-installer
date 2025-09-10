@@ -131,12 +131,46 @@ class LauncherUtils internal constructor(private val opts: UpdateManager.Options
 				else -> {}
 			}
 
-			manifestPath.nioPath.writeText(gson.toJson(multimcManifest))
-			Log.info("Successfully updated mmc-pack.json based on version metadata")
+			// manifestPath.nioPath.writeText(gson.toJson(multimcManifest))
+			// Log.info("Successfully updated mmc-pack.json based on version metadata")
 
-			return LauncherStatus.SUCCESSFUL
+			// --- NOUVEAU : écrire via un process isolé après arrêt de Prism ---
+			val jsonStr = gson.toJson(multimcManifest)
+
+			// 1) On stocke le JSON à écrire dans un fichier temporaire
+			val tmp = java.nio.file.Files.createTempFile("mmc-pack-update-", ".json")
+			java.nio.file.Files.write(tmp, jsonStr.toByteArray(java.nio.charset.StandardCharsets.UTF_8))
+
+			// 2) On lance un process Java qui attend que le fichier soit "stable" puis le remplace
+			spawnIsolatedMultiMCUpdater(
+				manifestPath.nioPath.toString(),
+				tmp.toAbsolutePath().toString()
+			)
+
+			Log.info("Spawned isolated updater for mmc-pack.json; exiting with code 100 to let Prism stop cleanly")
+			// 3) On stoppe le process courant (Prism annulera le lancement)
+			kotlin.system.exitProcess(100)
+
+			// (inatteignable)
+			// return LauncherStatus.SUCCESSFUL
 		}
 
 		return LauncherStatus.NO_CHANGES
 	}
+
+	private fun spawnIsolatedMultiMCUpdater(mmcPackPath: String, payloadPath: String) {
+		val javaBin = System.getProperty("java.home") + java.io.File.separator + "bin" + java.io.File.separator + "java"
+		// Chemin du JAR courant (shadow + R8), fonctionne aussi en dev
+		val jarPath = java.io.File(LauncherUtils::class.java.protectionDomain.codeSource.location.toURI()).absolutePath
+
+		// On lance le main dédié sans bloquer
+		val pb = ProcessBuilder(
+			javaBin, "-cp", jarPath,
+			"link.infra.packwiz.installer.IsolatedMultiMCUpdater",
+			mmcPackPath, payloadPath
+		)
+		pb.inheritIO() // logs visibles si besoin (optionnel)
+		pb.start()
+	}
+
 }
