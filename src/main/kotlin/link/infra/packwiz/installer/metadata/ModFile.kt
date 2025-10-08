@@ -26,7 +26,7 @@ data class ModFile(
 ) {
 	data class Download(
         val url: PackwizPath<*>?,
-        val disabledClientPlatforms: List<OS>,
+        val disabledClientPlatforms: List<OS>?,
         val hashFormat: HashFormat<*>,
         val hash: String,
         val mode: DownloadMode = DownloadMode.URL
