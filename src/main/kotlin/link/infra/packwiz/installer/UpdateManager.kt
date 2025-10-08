@@ -390,6 +390,7 @@ class UpdateManager internal constructor(private val opts: Options, val ui: IUse
 				when (task.completionStatus) {
 					DownloadTask.CompletionStatus.INCOMPLETE -> "${task.name} pending (you should never see this...)"
 					DownloadTask.CompletionStatus.DOWNLOADED -> "Downloaded ${task.name}"
+                    DownloadTask.CompletionStatus.DOWNLOADED_IGNORED_OS_FILTER -> "Downloaded ${task.name} (ignored OS filtering)"
 					DownloadTask.CompletionStatus.ALREADY_EXISTS_CACHED -> "${task.name} already exists (cached)"
 					DownloadTask.CompletionStatus.ALREADY_EXISTS_VALIDATED -> "${task.name} already exists (validated)"
 					DownloadTask.CompletionStatus.SKIPPED_DISABLED -> "Skipped ${task.name} (disabled)"

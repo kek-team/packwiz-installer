@@ -1,6 +1,7 @@
 package link.infra.packwiz.installer.metadata
 
 import cc.ekblad.toml.delegate
+import cc.ekblad.toml.get
 import cc.ekblad.toml.model.TomlValue
 import cc.ekblad.toml.tomlMapper
 import link.infra.packwiz.installer.metadata.curseforge.UpdateData
@@ -17,84 +18,83 @@ import okio.Source
 import kotlin.reflect.KType
 
 data class ModFile(
-	val name: String,
-	val filename: PackwizPath<*>,
-	val side: Side = Side.BOTH,
-	val download: Download,
-	val update: Map<String, UpdateData> = mapOf(),
-	val option: Option = Option(false)
+    val name: String,
+    val filename: PackwizPath<*>,
+    val side: Side = Side.BOTH,
+    val download: Download,
+    val update: Map<String, UpdateData> = mapOf(),
+    val option: Option = Option(false)
 ) {
-	data class Download(
+    data class Download(
         val url: PackwizPath<*>?,
         val disabledClientPlatforms: List<OS> = emptyList(),
         val hashFormat: HashFormat<*>,
         val hash: String,
         val mode: DownloadMode = DownloadMode.URL
-	) {
-		companion object {
-			fun mapper() = tomlMapper {
-				decoder<TomlValue.String, PackwizPath<*>> { it -> HttpUrlPath(it.value.toHttpUrl()) }
-
+    ) {
+        companion object {
+            fun mapper() = tomlMapper {
+                decoder<TomlValue.String, PackwizPath<*>> { it -> HttpUrlPath(it.value.toHttpUrl()) }
                 mapping<Download>("hash-format" to "hashFormat")
                 mapping<Download>("disabled-client-platforms" to "disabledClientPlatforms")
 
+                delegate<List<OS>>(OS.listMapper())
                 delegateTransitive<HashFormat<*>>(HashFormat.mapper())
-                delegate<OS>(OS.mapper())
-				delegate<DownloadMode>(DownloadMode.mapper())
-			}
-		}
-	}
+                delegate<DownloadMode>(DownloadMode.mapper())
+            }
+        }
+    }
 
-	@Transient
-	val resolvedUpdateData = mutableMapOf<String, PackwizPath<*>>()
+    @Transient
+    val resolvedUpdateData = mutableMapOf<String, PackwizPath<*>>()
 
-	data class Option(
-		val optional: Boolean,
-		val description: String = "",
-		val defaultValue: Boolean = false
-	) {
-		companion object {
-			fun mapper() = tomlMapper {
-				mapping<Option>("default" to "defaultValue")
-			}
-		}
-	}
+    data class Option(
+        val optional: Boolean,
+        val description: String = "",
+        val defaultValue: Boolean = false
+    ) {
+        companion object {
+            fun mapper() = tomlMapper {
+                mapping<Option>("default" to "defaultValue")
+            }
+        }
+    }
 
-	@Throws(Exception::class)
-	fun getSource(clientHolder: ClientHolder): Source {
-		return when (download.mode) {
-			DownloadMode.URL -> {
-				(download.url ?: throw Exception("No download URL provided")).source(clientHolder)
-			}
-			DownloadMode.CURSEFORGE -> {
-				if (!resolvedUpdateData.contains("curseforge")) {
-					throw Exception("Metadata file specifies CurseForge mode, but is missing metadata")
-				}
-				return resolvedUpdateData["curseforge"]!!.source(clientHolder)
-			}
-		}
-	}
+    @Throws(Exception::class)
+    fun getSource(clientHolder: ClientHolder): Source {
+        return when (download.mode) {
+            DownloadMode.URL -> {
+                (download.url ?: throw Exception("No download URL provided")).source(clientHolder)
+            }
+            DownloadMode.CURSEFORGE -> {
+                if (!resolvedUpdateData.contains("curseforge")) {
+                    throw Exception("Metadata file specifies CurseForge mode, but is missing metadata")
+                }
+                return resolvedUpdateData["curseforge"]!!.source(clientHolder)
+            }
+        }
+    }
 
-	@get:Throws(Exception::class)
-	val hash: Hash<*>
-		get() = download.hashFormat.fromString(download.hash)
+    @get:Throws(Exception::class)
+    val hash: Hash<*>
+        get() = download.hashFormat.fromString(download.hash)
 
-	companion object {
-		fun mapper(base: PackwizPath<*>) = tomlMapper {
-			delegateTransitive<PackwizPath<*>>(PackwizPath.mapperRelativeTo(base))
+    companion object {
+        fun mapper(base: PackwizPath<*>) = tomlMapper {
+            delegateTransitive<PackwizPath<*>>(PackwizPath.mapperRelativeTo(base))
 
-			delegateTransitive<Option>(Option.mapper())
-			delegateTransitive<Download>(Download.mapper())
+            delegateTransitive<Option>(Option.mapper())
+            delegateTransitive<Download>(Download.mapper())
 
-			delegateTransitive<Side>(Side.mapper())
-			val updateDataMapper = UpdateData.mapper()
-			decoder { type: KType, it: TomlValue.Map ->
-				if (type.arguments[1].type?.classifier == UpdateData::class) {
-					updateDataMapper.decode<Map<String, UpdateData>>(it)
-				} else {
-					pass()
-				}
-			}
-		}
-	}
+            delegateTransitive<Side>(Side.mapper())
+            val updateDataMapper = UpdateData.mapper()
+            decoder { type: KType, it: TomlValue.Map ->
+                if (type.arguments[1].type?.classifier == UpdateData::class) {
+                    updateDataMapper.decode<Map<String, UpdateData>>(it)
+                } else {
+                    pass()
+                }
+            }
+        }
+    }
 }

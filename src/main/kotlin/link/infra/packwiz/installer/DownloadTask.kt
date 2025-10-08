@@ -42,6 +42,7 @@ internal class DownloadTask private constructor(val metadata: IndexFile.File, va
 	enum class CompletionStatus {
 		INCOMPLETE,
 		DOWNLOADED,
+        DOWNLOADED_IGNORED_OS_FILTER,
 		ALREADY_EXISTS_CACHED,
 		ALREADY_EXISTS_VALIDATED,
 		SKIPPED_DISABLED,
@@ -60,12 +61,7 @@ internal class DownloadTask private constructor(val metadata: IndexFile.File, va
 
 	fun correctSide() = currentModFileSide?.let { downloadSide.hasSide(it) } ?: true
 
-    fun wrongOS(): Boolean {
-        if (downloadSide.hasSide(Side.SERVER)) {
-            // the server needs to download everything, so it can never be the wrong OS
-            Log.info("On server-side, ignoring OS filtering")
-            return false
-        }
+    fun shouldSkipForOS(): Boolean {
         if (OSGetter.current == OS.UNKNOWN) {
             Log.warn("Couldn't get OS, ignoring OS filtering")
             return false
@@ -209,132 +205,155 @@ internal class DownloadTask private constructor(val metadata: IndexFile.File, va
 		}
 	}
 
-	fun download(packFolder: PackwizFilePath, clientHolder: ClientHolder) {
-		if (err != null) return
+    sealed class DownloadDecision(val status: CompletionStatus?) {
+        class Proceed(status: CompletionStatus? = null) : DownloadDecision(status)
+        class Skip(status: CompletionStatus) : DownloadDecision(status)
+    }
 
-		// Exclude wrong-side and optional false files
-		cachedFile?.let {
-            val wrongSide = !correctSide()
-            val disabled = it.isOptional && !it.optionValue
 
-            val (deletedStatus, skippedStatus) = when {
-                wrongOS() -> CompletionStatus.DELETED_WRONG_OS to CompletionStatus.SKIPPED_WRONG_OS
-                wrongSide -> CompletionStatus.DELETED_WRONG_SIDE to CompletionStatus.SKIPPED_WRONG_SIDE
-                disabled -> CompletionStatus.DELETED_DISABLED to CompletionStatus.SKIPPED_DISABLED
-                else -> return@let
+    fun shouldDownload(): DownloadDecision {
+        val wrongSide = !correctSide()
+        val wrongOS = shouldSkipForOS()
+        val disabled = cachedFile?.let { it.isOptional && !it.optionValue } ?: false
+
+        // --- SERVER: ignore OS filter, but still respect side/disabled ---
+        if (downloadSide.hasSide(Side.SERVER)) {
+            if (wrongSide) return deleteAndSkip(CompletionStatus.DELETED_WRONG_SIDE, CompletionStatus.SKIPPED_WRONG_SIDE)
+            if (disabled) return deleteAndSkip(CompletionStatus.DELETED_DISABLED, CompletionStatus.SKIPPED_DISABLED)
+
+            if (wrongOS) {
+                return DownloadDecision.Proceed(CompletionStatus.DOWNLOADED_IGNORED_OS_FILTER)
             }
 
-            val deleted = try {
-                it.cachedLocation?.let { path -> Files.deleteIfExists(path.nioPath) } ?: false
+            return DownloadDecision.Proceed()
+        }
 
+        // --- CLIENT: standard filtering rules ---
+        if (OSGetter.current == OS.UNKNOWN) {
+            Log.warn("Couldn't determine OS, ignoring OS filtering for ${metadata.name}")
+            return DownloadDecision.Proceed()
+        }
+
+        if (wrongOS) return deleteAndSkip(CompletionStatus.DELETED_WRONG_OS, CompletionStatus.SKIPPED_WRONG_OS)
+        if (wrongSide) return deleteAndSkip(CompletionStatus.DELETED_WRONG_SIDE, CompletionStatus.SKIPPED_WRONG_SIDE)
+        if (disabled) return deleteAndSkip(CompletionStatus.DELETED_DISABLED, CompletionStatus.SKIPPED_DISABLED)
+
+        return DownloadDecision.Proceed()
+    }
+
+    private fun deleteAndSkip(deletedStatus: CompletionStatus, skippedStatus: CompletionStatus): DownloadDecision {
+        var deleted = false
+        cachedFile?.cachedLocation?.let { loc ->
+            try {
+                if (Files.deleteIfExists(loc.nioPath)) {
+                    Log.info("Deleted cached file for ${metadata.name} (${deletedStatus.name.lowercase()})")
+                    deleted = true
+                }
             } catch (e: IOException) {
-                Log.warn("Failed to delete file (${it.cachedLocation})", e)
-                false
+                Log.warn("Failed to delete cached file (${loc})", e)
+            }
+            cachedFile?.cachedLocation = null
+        }
+        return DownloadDecision.Skip(if (deleted) deletedStatus else skippedStatus)
+    }
+
+
+
+    fun download(packFolder: PackwizFilePath, clientHolder: ClientHolder) {
+        if (err != null) return
+
+        // Decide if we should download or skip
+        when (val decision = shouldDownload()) {
+            is DownloadDecision.Skip -> {
+                completionStatus = decision.status!!
+                return
+            }
+            is DownloadDecision.Proceed -> {
+                decision.status?.let { completionStatus = it }
+            }
+        }
+
+        if (alreadyUpToDate) return
+
+        val destPath = metadata.destURI.rebase(packFolder)
+
+        // Skip if preserve=true and file already exists
+        if (metadata.preserve && destPath.nioPath.toFile().exists()) return
+
+        try {
+            var (hash, hashFormat) = metadata.linkedFile?.let { linked ->
+                linked.hash to linked.download.hashFormat
+            } ?: (metadata.getHashObj(index) to metadata.hashFormat(index))
+
+            val src = metadata.getSource(clientHolder)
+            val fileSource = hashFormat.source(src)
+            val data = Buffer()
+
+            fileSource.buffer().use { it.readAll(data) }
+
+            if (hash == fileSource.hash) {
+                try {
+                    Files.createDirectories(destPath.parent.nioPath)
+                } catch (e: java.nio.file.FileAlreadyExistsException) {
+                    if (!Files.isDirectory(destPath.parent.nioPath)) throw e
+                }
+
+                Files.copy(data.inputStream(), destPath.nioPath, StandardCopyOption.REPLACE_EXISTING)
+                data.clear()
+            } else {
+                Log.warn("Invalid hash for ${metadata.destURI}")
+                Log.warn("Calculated: ${fileSource.hash}")
+                Log.warn("Expected:   $hash")
+
+                val sha256 = HashingSink.sha256(blackholeSink())
+                data.readAll(sha256)
+                Log.warn("SHA256 hash value: ${sha256.hash}")
+
+                err = Exception("Hash invalid for ${metadata.name}")
+                data.clear()
+                return
             }
 
-            completionStatus = if (deleted) deletedStatus else skippedStatus
+            cachedFile?.cachedLocation?.let { old ->
+                if (destPath != old) {
+                    try {
+                        Files.deleteIfExists(old.nioPath)
+                    } catch (e: IOException) {
+                        Log.warn("Failed to delete old cached file (${old.nioPath})", e)
+                    }
+                }
+            }
 
-            it.cachedLocation = null
-		}
-		if (alreadyUpToDate) return
+            cachedFile = (cachedFile ?: ManifestFile.File()).apply {
+                try {
+                    hash = metadata.getHashObj(index)
+                } catch (e: Exception) {
+                    err = e
+                    return
+                }
+                isOptional = isOptional
+                cachedLocation = destPath
+                metadata.linkedFile?.let { linked ->
+                    try {
+                        linkedFileHash = linked.hash
+                    } catch (e: Exception) {
+                        err = e
+                    }
+                }
+            }
+            if (completionStatus != CompletionStatus.DOWNLOADED_IGNORED_OS_FILTER) {
+                // don't overwrite CompletionStatus.DOWNLOADED_IGNORED_OS_FILTER
+                completionStatus = CompletionStatus.DOWNLOADED
+            }
 
-		val destPath = metadata.destURI.rebase(packFolder)
+        } catch (e: Exception) {
+            err = e
+        }
+    }
 
-		// Don't update files marked with preserve if they already exist on disk
-		if (metadata.preserve) {
-			if (destPath.nioPath.toFile().exists()) {
-				return
-			}
-		}
 
-		// TODO: add .disabled support?
 
-		try {
-			val hash: Hash<*>
-			val fileHashFormat: HashFormat<*>
-			val linkedFile = metadata.linkedFile
-
-			if (linkedFile != null) {
-				hash = linkedFile.hash
-				fileHashFormat = linkedFile.download.hashFormat
-			} else {
-				hash = metadata.getHashObj(index)
-				fileHashFormat = metadata.hashFormat(index)
-			}
-
-			val src = metadata.getSource(clientHolder)
-			val fileSource = fileHashFormat.source(src)
-			val data = Buffer()
-
-			// Read all the data into a buffer (very inefficient for large files! but allows rollback if hash check fails)
-			// TODO: should we instead rename the existing file, then stream straight to the file and rollback from the renamed file?
-			fileSource.buffer().use {
-				it.readAll(data)
-			}
-
-			if (hash == fileSource.hash) {
-				// isDirectory follows symlinks, but createDirectories doesn't
-				try {
-					Files.createDirectories(destPath.parent.nioPath)
-				} catch (e: java.nio.file.FileAlreadyExistsException) {
-					if (!Files.isDirectory(destPath.parent.nioPath)) {
-						throw e
-					}
-				}
-				Files.copy(data.inputStream(), destPath.nioPath, StandardCopyOption.REPLACE_EXISTING)
-				data.clear()
-			} else {
-				// TODO: move println to something visible in the error window
-				println("Invalid hash for " + metadata.destURI.toString())
-				println("Calculated: " + fileSource.hash)
-				println("Expected:   $hash")
-				// Attempt to get the SHA256 hash
-				val sha256 = HashingSink.sha256(blackholeSink())
-				data.readAll(sha256)
-				println("SHA256 hash value: " + sha256.hash)
-				err = Exception("Hash invalid!")
-				data.clear()
-				return
-			}
-			cachedFile?.cachedLocation?.let {
-				if (destPath != it) {
-					// Delete old file if location changes
-					try {
-						Files.delete(cachedFile!!.cachedLocation!!.nioPath)
-					} catch (e: IOException) {
-						// Continue, as it was probably already deleted?
-						// TODO: log it
-					}
-				}
-			}
-		} catch (e: Exception) {
-			err = e
-			return
-		}
-
-		// Update the manifest file
-		cachedFile = (cachedFile ?: ManifestFile.File()).also {
-			try {
-				it.hash = metadata.getHashObj(index)
-			} catch (e: Exception) {
-				err = e
-				return
-			}
-			it.isOptional = isOptional
-			it.cachedLocation = metadata.destURI.rebase(packFolder)
-			metadata.linkedFile?.let { linked ->
-				try {
-					it.linkedFileHash = linked.hash
-				} catch (e: Exception) {
-					err = e
-				}
-			}
-		}
-
-		completionStatus = CompletionStatus.DOWNLOADED
-	}
-
-	companion object {
+    companion object {
 		fun createTasksFromIndex(index: IndexFile, downloadSide: Side): MutableList<DownloadTask> {
 			val tasks = ArrayList<DownloadTask>()
 			for (file in index.files) {
