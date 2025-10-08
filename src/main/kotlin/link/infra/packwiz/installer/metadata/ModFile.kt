@@ -34,22 +34,12 @@ data class ModFile(
 		companion object {
 			fun mapper() = tomlMapper {
 				decoder<TomlValue.String, PackwizPath<*>> { it -> HttpUrlPath(it.value.toHttpUrl()) }
-                decoder<TomlValue, List<OS>> { _, tomlValue ->
-                    if (tomlValue is TomlValue.List) {
-                        // If we get a list, we know how to decode it.
-                        tomlValue.elements.map { OS.mapper().decode<OS>(it) }
-                    } else {
-                        // If it's not a list, we don't know what to do.
-                        // We pass control back to the library, which will
-                        // then try other decoders or default behaviors.
-                        pass()
-                    }
-                }
 
                 mapping<Download>("hash-format" to "hashFormat")
                 mapping<Download>("disabled-client-platforms" to "disabledClientPlatforms")
 
                 delegateTransitive<HashFormat<*>>(HashFormat.mapper())
+                delegate<OS>(OS.mapper())
 				delegate<DownloadMode>(DownloadMode.mapper())
 			}
 		}
