@@ -6,8 +6,7 @@ import link.infra.packwiz.installer.metadata.hash.Hash
 import link.infra.packwiz.installer.metadata.hash.HashFormat
 import link.infra.packwiz.installer.request.RequestException
 import link.infra.packwiz.installer.target.ClientHolder
-import link.infra.packwiz.installer.target.CurrentOs
-import link.infra.packwiz.installer.target.OS
+import link.infra.packwiz.installer.target.CurrentOS
 import link.infra.packwiz.installer.target.Side
 import link.infra.packwiz.installer.target.path.PackwizFilePath
 import link.infra.packwiz.installer.ui.data.ExceptionDetails
@@ -60,13 +59,14 @@ internal class DownloadTask private constructor(val metadata: IndexFile.File, va
 
 	fun correctSide() = currentSide?.let { downloadSide.hasSide(it) } ?: true
 
-    fun correctOS(): Boolean {
+    fun wrongOS(): Boolean {
         if (downloadSide.hasSide(Side.SERVER)) {
-            // make side always true on server so we don't have problems
-            return true
+            // the server needs to download everything, so it can never be the wrong OS
+            Log.info("On server-side, ignoring OS filtering")
+            return false
         }
-        val excluded = metadata.linkedFile?.excludedOSes ?: return true
-        return !excluded.contains(CurrentOs.current)
+        val excluded = metadata.linkedFile?.excludedOSes ?: return false
+        return excluded.contains(CurrentOS.current)
     }
 
     override val name get() = metadata.name
@@ -210,11 +210,10 @@ internal class DownloadTask private constructor(val metadata: IndexFile.File, va
 		// Exclude wrong-side and optional false files
 		cachedFile?.let {
             val wrongSide = !correctSide()
-            val wrongOS = !correctOS()
-            val disabled = it.isOptional && it.optionValue
+            val disabled = it.isOptional && !it.optionValue
 
             val (deletedStatus, skippedStatus) = when {
-                wrongOS -> CompletionStatus.DELETED_WRONG_OS to CompletionStatus.SKIPPED_WRONG_OS
+                wrongOS() -> CompletionStatus.DELETED_WRONG_OS to CompletionStatus.SKIPPED_WRONG_OS
                 wrongSide -> CompletionStatus.DELETED_WRONG_SIDE to CompletionStatus.SKIPPED_WRONG_SIDE
                 disabled -> CompletionStatus.DELETED_DISABLED to CompletionStatus.SKIPPED_DISABLED
                 else -> return@let

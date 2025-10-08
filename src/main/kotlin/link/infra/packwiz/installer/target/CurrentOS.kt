@@ -1,6 +1,6 @@
 package link.infra.packwiz.installer.target
 
-object CurrentOs {
+object CurrentOS {
     val current: OS by lazy {
         val n = System.getProperty("os.name").lowercase()
         when {
