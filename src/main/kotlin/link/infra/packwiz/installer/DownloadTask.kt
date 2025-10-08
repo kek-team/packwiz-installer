@@ -6,6 +6,8 @@ import link.infra.packwiz.installer.metadata.hash.Hash
 import link.infra.packwiz.installer.metadata.hash.HashFormat
 import link.infra.packwiz.installer.request.RequestException
 import link.infra.packwiz.installer.target.ClientHolder
+import link.infra.packwiz.installer.target.CurrentOs
+import link.infra.packwiz.installer.target.OS
 import link.infra.packwiz.installer.target.Side
 import link.infra.packwiz.installer.target.path.PackwizFilePath
 import link.infra.packwiz.installer.ui.data.ExceptionDetails
@@ -44,17 +46,30 @@ internal class DownloadTask private constructor(val metadata: IndexFile.File, va
 		ALREADY_EXISTS_VALIDATED,
 		SKIPPED_DISABLED,
 		SKIPPED_WRONG_SIDE,
+        SKIPPED_WRONG_OS,
 		DELETED_DISABLED,
-		DELETED_WRONG_SIDE;
+		DELETED_WRONG_SIDE,
+        DELETED_WRONG_OS;
 	}
 
 	val isOptional get() = metadata.linkedFile?.option?.optional ?: false
 
+    val currentSide = metadata.linkedFile?.side
+
 	fun isNewOptional() = isOptional && newOptional
 
-	fun correctSide() = metadata.linkedFile?.side?.let { downloadSide.hasSide(it) } ?: true
+	fun correctSide() = currentSide?.let { downloadSide.hasSide(it) } ?: true
 
-	override val name get() = metadata.name
+    fun correctOS(): Boolean {
+        if (downloadSide.hasSide(Side.SERVER)) {
+            // make side always true on server so we don't have problems
+            return true
+        }
+        val excluded = metadata.linkedFile?.excludedOSes ?: return true
+        return !excluded.contains(CurrentOs.current)
+    }
+
+    override val name get() = metadata.name
 
 	// Ensure that an update is done if it changes from false to true, or from true to false
 	override var optionValue: Boolean
@@ -194,26 +209,28 @@ internal class DownloadTask private constructor(val metadata: IndexFile.File, va
 
 		// Exclude wrong-side and optional false files
 		cachedFile?.let {
-			if ((it.isOptional && !it.optionValue) || !correctSide()) {
-				if (it.cachedLocation != null) {
-					// Ensure wrong-side or optional false files are removed
-					try {
-						completionStatus = if (Files.deleteIfExists(it.cachedLocation!!.nioPath)) {
-							if (correctSide()) { CompletionStatus.DELETED_DISABLED } else { CompletionStatus.DELETED_WRONG_SIDE }
-						} else {
-							if (correctSide()) { CompletionStatus.SKIPPED_DISABLED } else { CompletionStatus.SKIPPED_WRONG_SIDE }
-						}
-					} catch (e: IOException) {
-						Log.warn("Failed to delete file", e)
-					}
-				} else {
-					completionStatus =
-						if (correctSide()) { CompletionStatus.SKIPPED_DISABLED }
-						else { CompletionStatus.SKIPPED_WRONG_SIDE }
-				}
-				it.cachedLocation = null
-				return
-			}
+            val wrongSide = !correctSide()
+            val wrongOS = !correctOS()
+            val disabled = it.isOptional && it.optionValue
+
+            val (deletedStatus, skippedStatus) = when {
+                wrongOS -> CompletionStatus.DELETED_WRONG_OS to CompletionStatus.SKIPPED_WRONG_OS
+                wrongSide -> CompletionStatus.DELETED_WRONG_SIDE to CompletionStatus.SKIPPED_WRONG_SIDE
+                disabled -> CompletionStatus.DELETED_DISABLED to CompletionStatus.SKIPPED_DISABLED
+                else -> return@let
+            }
+
+            val deleted = try {
+                it.cachedLocation?.let { path -> Files.deleteIfExists(path.nioPath) } ?: false
+
+            } catch (e: IOException) {
+                Log.warn("Failed to delete file (${it.cachedLocation})", e)
+                false
+            }
+
+            completionStatus = if (deleted) deletedStatus else skippedStatus
+
+            it.cachedLocation = null
 		}
 		if (alreadyUpToDate) return
 
