@@ -6,12 +6,13 @@ import link.infra.packwiz.installer.metadata.hash.Hash
 import link.infra.packwiz.installer.metadata.hash.HashFormat
 import link.infra.packwiz.installer.request.RequestException
 import link.infra.packwiz.installer.target.ClientHolder
-import link.infra.packwiz.installer.target.CurrentOS
+import link.infra.packwiz.installer.target.OS
 import link.infra.packwiz.installer.target.Side
 import link.infra.packwiz.installer.target.path.PackwizFilePath
 import link.infra.packwiz.installer.ui.data.ExceptionDetails
 import link.infra.packwiz.installer.ui.data.IOptionDetails
 import link.infra.packwiz.installer.util.Log
+import link.infra.packwiz.installer.util.OSGetter
 import okio.Buffer
 import okio.HashingSink
 import okio.blackholeSink
@@ -53,11 +54,11 @@ internal class DownloadTask private constructor(val metadata: IndexFile.File, va
 
 	val isOptional get() = metadata.linkedFile?.option?.optional ?: false
 
-    val currentSide = metadata.linkedFile?.side
+    val currentModFileSide = metadata.linkedFile?.side
 
 	fun isNewOptional() = isOptional && newOptional
 
-	fun correctSide() = currentSide?.let { downloadSide.hasSide(it) } ?: true
+	fun correctSide() = currentModFileSide?.let { downloadSide.hasSide(it) } ?: true
 
     fun wrongOS(): Boolean {
         if (downloadSide.hasSide(Side.SERVER)) {
@@ -65,8 +66,12 @@ internal class DownloadTask private constructor(val metadata: IndexFile.File, va
             Log.info("On server-side, ignoring OS filtering")
             return false
         }
-        val excluded = metadata.linkedFile?.excludedOSes ?: return false
-        return excluded.contains(CurrentOS.current)
+        if (OSGetter.current == OS.UNKNOWN) {
+            Log.warn("Couldn't get OS, ignoring OS filtering")
+            return false
+        }
+        val excluded = metadata.linkedFile?.download?.disabledClientPlatforms ?: return false
+        return excluded.contains(OSGetter.current)
     }
 
     override val name get() = metadata.name

@@ -12,10 +12,11 @@ enum class OS(osName: String) {
     WINDOWS("windows"),
     @SerializedName("linux")
     LINUX("linux"),
-    @SerializedName("other")
-    OTHER("other");
+    @SerializedName(value = "unknown")
+    UNKNOWN("unknown");
 
     private val osName: String
+
 
     init {
         this.osName = osName.lowercase()
@@ -32,7 +33,7 @@ enum class OS(osName: String) {
         fun mapper() = tomlMapper {
             encoder { it: OS -> TomlValue.String(it.osName) }
             decoder { it: TomlValue.String ->
-                from(it.value) ?: throw Exception("OS not recognized ${it.value}")
+                from(it.value) ?: throw Exception("Invalid OS ${it.value}")
             }
         }
     }
