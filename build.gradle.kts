@@ -17,8 +17,11 @@ repositories {
 	mavenCentral()
 	google()
 	maven {
-		url = uri("https://jitpack.io")
+        url = uri("https://storage.googleapis.com/r8-releases/raw")
 	}
+    maven {
+        url = uri("https://jitpack.io")
+    }
 }
 
 val r8 by configurations.creating
@@ -38,9 +41,9 @@ dependencies {
 	implementation("com.squareup.okio:okio:3.1.0")
 	implementation(kotlin("stdlib-jdk8"))
 	implementation("com.squareup.okhttp3:okhttp:4.10.0")
-	implementation("cc.ekblad:4koma:1.1.0")
+	implementation("cc.ekblad:4koma:1.2.0")
 
-	r8("com.android.tools:r8:3.3.28")
+	r8("com.android.tools:r8:8.2.24")
 }
 
 application {
@@ -155,13 +158,13 @@ tasks.publish {
 
 tasks.compileKotlin {
 	kotlinOptions {
-		jvmTarget = "1.8"
+		jvmTarget = "17"
 		freeCompilerArgs = listOf("-Xjvm-default=all", "-Xallow-result-return-type", "-opt-in=kotlin.io.path.ExperimentalPathApi", "-Xlambdas=indy")
 	}
 }
 tasks.compileTestKotlin {
 	kotlinOptions {
-		jvmTarget = "1.8"
+		jvmTarget = "17"
 		freeCompilerArgs = listOf("-Xjvm-default=all", "-Xallow-result-return-type", "-opt-in=kotlin.io.path.ExperimentalPathApi", "-Xlambdas=indy")
 	}
 }

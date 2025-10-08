@@ -21,22 +21,26 @@ data class ModFile(
 	val filename: PackwizPath<*>,
 	val side: Side = Side.BOTH,
 	val download: Download,
-    val excludedOSes: List<OS> = emptyList(),
 	val update: Map<String, UpdateData> = mapOf(),
 	val option: Option = Option(false)
 ) {
 	data class Download(
-		val url: PackwizPath<*>?,
-		val hashFormat: HashFormat<*>,
-		val hash: String,
-		val mode: DownloadMode = DownloadMode.URL
+        val url: PackwizPath<*>?,
+        val disabledClientPlatforms: List<OS>,
+        val hashFormat: HashFormat<*>,
+        val hash: String,
+        val mode: DownloadMode = DownloadMode.URL
 	) {
 		companion object {
 			fun mapper() = tomlMapper {
 				decoder<TomlValue.String, PackwizPath<*>> { it -> HttpUrlPath(it.value.toHttpUrl()) }
+                decoder<TomlValue.List, List<OS>> { it ->
+                    it.elements.map { OS.mapper().decode<OS>(it) }
+                }
 				mapping<Download>("hash-format" to "hashFormat")
+                mapping<Download>("disabled-client-platforms" to "disabledClientPlatforms")
 
-				delegateTransitive<HashFormat<*>>(HashFormat.mapper())
+                delegateTransitive<HashFormat<*>>(HashFormat.mapper())
 				delegate<DownloadMode>(DownloadMode.mapper())
 			}
 		}
@@ -84,7 +88,6 @@ data class ModFile(
 			delegateTransitive<Download>(Download.mapper())
 
 			delegateTransitive<Side>(Side.mapper())
-            delegateTransitive<OS>(OS.mapper())
 			val updateDataMapper = UpdateData.mapper()
 			decoder { type: KType, it: TomlValue.Map ->
 				if (type.arguments[1].type?.classifier == UpdateData::class) {
