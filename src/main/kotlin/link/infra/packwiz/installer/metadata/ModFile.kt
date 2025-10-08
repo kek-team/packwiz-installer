@@ -26,7 +26,7 @@ data class ModFile(
 ) {
 	data class Download(
         val url: PackwizPath<*>?,
-        val disabledClientPlatforms: List<OS>?,
+        val disabledClientPlatforms: List<OS>,
         val hashFormat: HashFormat<*>,
         val hash: String,
         val mode: DownloadMode = DownloadMode.URL
@@ -34,10 +34,13 @@ data class ModFile(
 		companion object {
 			fun mapper() = tomlMapper {
 				decoder<TomlValue.String, PackwizPath<*>> { it -> HttpUrlPath(it.value.toHttpUrl()) }
-                decoder<TomlValue.List, List<OS>> { it ->
-                    it.elements.map { OS.mapper().decode<OS>(it) }
+                decoder<TomlValue.List, List<OS>> { value ->
+                    value.elements.map { OS.mapper().decode<OS>(it) }
                 }
-				mapping<Download>("hash-format" to "hashFormat")
+
+                default<List<OS>>(emptyList()) // makes disabledClientPlatforms optional
+
+                mapping<Download>("hash-format" to "hashFormat")
                 mapping<Download>("disabled-client-platforms" to "disabledClientPlatforms")
 
                 delegateTransitive<HashFormat<*>>(HashFormat.mapper())
