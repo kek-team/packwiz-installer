@@ -36,6 +36,13 @@ enum class OS(osName: String) {
                 from(it.value) ?: throw Exception("Invalid OS ${it.value}")
             }
         }
+        fun listMapper() = tomlMapper {
+            decoder { it: TomlValue.List ->
+                it.elements.map { it ->
+                    mapper().decode<OS>(it)
+                }
+            }
+        }
     }
 
 
