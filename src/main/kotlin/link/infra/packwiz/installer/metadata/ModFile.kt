@@ -7,6 +7,7 @@ import link.infra.packwiz.installer.metadata.curseforge.UpdateData
 import link.infra.packwiz.installer.metadata.hash.Hash
 import link.infra.packwiz.installer.metadata.hash.HashFormat
 import link.infra.packwiz.installer.target.ClientHolder
+import link.infra.packwiz.installer.target.OS
 import link.infra.packwiz.installer.target.Side
 import link.infra.packwiz.installer.target.path.HttpUrlPath
 import link.infra.packwiz.installer.target.path.PackwizPath
@@ -20,6 +21,7 @@ data class ModFile(
 	val filename: PackwizPath<*>,
 	val side: Side = Side.BOTH,
 	val download: Download,
+    val excludedOSes: List<OS> = emptyList(),
 	val update: Map<String, UpdateData> = mapOf(),
 	val option: Option = Option(false)
 ) {
@@ -82,7 +84,7 @@ data class ModFile(
 			delegateTransitive<Download>(Download.mapper())
 
 			delegateTransitive<Side>(Side.mapper())
-
+            delegateTransitive<OS>(OS.mapper())
 			val updateDataMapper = UpdateData.mapper()
 			decoder { type: KType, it: TomlValue.Map ->
 				if (type.arguments[1].type?.classifier == UpdateData::class) {

@@ -394,8 +394,10 @@ class UpdateManager internal constructor(private val opts: Options, val ui: IUse
 					DownloadTask.CompletionStatus.ALREADY_EXISTS_VALIDATED -> "${task.name} already exists (validated)"
 					DownloadTask.CompletionStatus.SKIPPED_DISABLED -> "Skipped ${task.name} (disabled)"
 					DownloadTask.CompletionStatus.SKIPPED_WRONG_SIDE -> "Skipped ${task.name} (wrong side)"
+                    DownloadTask.CompletionStatus.SKIPPED_WRONG_OS -> "Skipped ${task.name} (wrong OS)"
 					DownloadTask.CompletionStatus.DELETED_DISABLED -> "Deleted ${task.name} (disabled)"
 					DownloadTask.CompletionStatus.DELETED_WRONG_SIDE -> "Deleted ${task.name} (wrong side)"
+                    DownloadTask.CompletionStatus.DELETED_WRONG_OS -> "Deleted ${task.name} (wrong OS)"
 				}
 			}
 			ui.submitProgress(InstallProgress(progress, i + 1, tasks.size))
