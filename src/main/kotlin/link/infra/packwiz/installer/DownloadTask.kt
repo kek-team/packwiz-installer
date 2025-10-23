@@ -55,7 +55,7 @@ internal class DownloadTask private constructor(val metadata: IndexFile.File, va
 
 	val isOptional get() = metadata.linkedFile?.option?.optional ?: false
 
-    val currentModFileSide = metadata.linkedFile?.side
+    val currentModFileSide get() = metadata.linkedFile?.side
 
 	fun isNewOptional() = isOptional && newOptional
 
@@ -106,7 +106,9 @@ internal class DownloadTask private constructor(val metadata: IndexFile.File, va
 			}
 			if (currHash == cachedFile.hash) { // Already up to date
 				alreadyUpToDate = true
-				metadataRequired = false
+				if (!metadata.metafile) {
+					metadataRequired = false
+				}
 				completionStatus = CompletionStatus.ALREADY_EXISTS_CACHED
 			}
 		}
