@@ -21,14 +21,14 @@ import javax.swing.JProgressBar
 import javax.swing.UIManager
 
 /**
- * Processus isolé : attend que Prism ait fini de toucher mmc-pack.json,
- * remplace le fichier par le JSON fourni (payload), puis (Windows uniquement)
- * tente de relancer l'instance automatiquement. Si l'exécutable Prism
- * n'est pas trouvé, on affiche une popup "Mise à jour terminée".
+ * Isolated process: waits for Prism to finish touching mmc-pack.json,
+ * replaces the file with the given JSON (payload), then (Windows only)
+ * tries to relaunch the instance automatically. If the Prism executable
+ * isn't found, shows an "Update complete" popup instead.
  *
  * Args:
- *   0 -> chemin vers mmc-pack.json
- *   1 -> chemin vers le fichier temporaire contenant le JSON à écrire
+ *   0 -> path to mmc-pack.json
+ *   1 -> path to the temp file containing the JSON to write
  */
 object IsolatedMultiMCUpdater {
     @JvmStatic
@@ -41,23 +41,23 @@ object IsolatedMultiMCUpdater {
         val mmcPack: Path = Paths.get(args[0])
         val payload: Path = Paths.get(args[1])
 
-        // Recherche du binaire Prism en parallèle pendant l'attente (Windows uniquement)
+        // Look up the Prism binary in parallel while we wait (Windows only)
         val prismExeFuture: CompletableFuture<String?> = startPrismExeLookupAsync()
 
-        // Fenêtre d’attente (JOptionPane-like) pendant la stabilisation
+        // Loading window (JOptionPane-like) shown while stabilizing
         val loading = showLoadingPane(
-            title = "Mise à jour en cours",
-            message = "Mise à jour du modloader... veuillez patienter"
+            title = "Update in progress",
+            message = "Updating mod loader... please wait"
         )
 
-        // Attente de stabilité (~5 s) pour laisser Prism finir
+        // Wait for stability (~5s) to let Prism finish
         try {
             waitFileStable(mmcPack, stableMillis = 5000, timeoutMillis = 30000)
         } catch (e: Exception) {
             Log.warn("mmc-pack.json did not stabilize in time; attempting write anyway", e)
         }
 
-        // Écriture atomique : copie -> move (pas de .bak)
+        // Atomic write: copy -> move (no .bak)
         try {
             val tmp: Path = if (mmcPack.parent != null)
                 Files.createTempFile(mmcPack.parent, "mmc-pack-new-", ".json")
@@ -71,35 +71,35 @@ object IsolatedMultiMCUpdater {
 
             Log.info("Isolated update complete: ${mmcPack.toAbsolutePath()}")
         } catch (e: Exception) {
-            // Fermer le "loading" s'il est ouvert
+            // Close the loading window if it's open
             try { EventQueue.invokeAndWait { loading?.dispose() } } catch (_: Exception) {}
-            // Popup d'erreur (cohérente)
-            safeShowError("Échec de la mise à jour du modloader : $e")
+            // Error popup (consistent style)
+            safeShowError("Failed to update mod loader: $e")
             kotlin.system.exitProcess(1)
         }
 
-        // Fermer la fenêtre d’attente
+        // Close the loading window
         try { EventQueue.invokeAndWait { loading?.dispose() } } catch (_: Exception) {}
 
-        // Tente la relance Windows en réutilisant le chemin déjà trouvé (si prêt)
-        val preResolvedExe = prismExeFuture.getNow(null) // ne bloque pas si pas encore prêt
+        // Try to relaunch on Windows, reusing the already-resolved path if ready
+        val preResolvedExe = prismExeFuture.getNow(null) // doesn't block if not ready yet
         val relaunched = tryRelaunchWindowsWithExe(preResolvedExe)
 
         if (!relaunched) {
-            // On n'a pas pu relancer (ou OS ≠ Windows) -> informer l'utilisateur
+            // Couldn't relaunch (or OS != Windows) -> inform the user
             safeShowInfo(
-                text = "Mise à jour du modloader terminée.\nVeuillez relancer l'instance.",
-                title = "Update terminée"
+                text = "Mod loader update complete.\nPlease relaunch the instance.",
+                title = "Update complete"
             )
         }
 
-        // Fin propre
+        // Clean exit
         kotlin.system.exitProcess(0)
     }
 
     /**
-     * Attend que le fichier cesse de changer (taille/mtime stables) pendant `stableMillis`,
-     * avec un timeout global `timeoutMillis`.
+     * Waits until the file stops changing (stable size/mtime) for `stableMillis`,
+     * with an overall `timeoutMillis` deadline.
      */
     private fun waitFileStable(path: Path, stableMillis: Long, timeoutMillis: Long) {
         val deadline = System.currentTimeMillis() + timeoutMillis
@@ -121,19 +121,19 @@ object IsolatedMultiMCUpdater {
                     stableSince = System.currentTimeMillis()
                 }
             } catch (_: Exception) {
-                // Fichier absent/inaccessible → on repart pour un cycle d'attente
+                // File missing/inaccessible -> restart the wait cycle
                 stableSince = System.currentTimeMillis()
                 lastSize = null
                 lastMtime = null
             }
             try { Thread.sleep(200) } catch (_: InterruptedException) { /* ignore */ }
         }
-        // Timeout dépassé -> on continue malgré tout
+        // Timeout exceeded -> continue anyway
     }
 
     /**
-     * Crée une fenêtre d'attente basée sur JOptionPane (same look & feel que les autres boîtes).
-     * Non-modale, indéterminée, "always on top", et non fermable.
+     * Creates a loading window based on JOptionPane (same look & feel as other dialogs).
+     * Non-modal, indeterminate, "always on top", and not closable.
      */
     private fun showLoadingPane(title: String, message: String): JDialog? {
         return try {
@@ -152,7 +152,7 @@ object IsolatedMultiMCUpdater {
                     JOptionPane.INFORMATION_MESSAGE,
                     JOptionPane.DEFAULT_OPTION,
                     null,
-                    emptyArray(), // pas de boutons
+                    emptyArray(), // no buttons
                     null
                 )
 
@@ -166,7 +166,7 @@ object IsolatedMultiMCUpdater {
             }
             dialog
         } catch (_: Exception) {
-            null // headless ou autre -> pas d'UI
+            null // headless or other -> no UI
         }
     }
 
@@ -183,14 +183,14 @@ object IsolatedMultiMCUpdater {
         try {
             EventQueue.invokeAndWait {
                 try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()) } catch (_: Exception) {}
-                JOptionPane.showMessageDialog(null, text, "Erreur", JOptionPane.ERROR_MESSAGE)
+                JOptionPane.showMessageDialog(null, text, "Error", JOptionPane.ERROR_MESSAGE)
             }
         } catch (_: Exception) { /* ignore */ }
     }
 
-    // ---------- Relance & détection Prism (Windows) ----------
+    // ---------- Relaunch & Prism detection (Windows) ----------
 
-    // Lance la recherche du .exe en parallèle (Windows). Sinon, future immédiat à null.
+    // Kicks off the .exe lookup in parallel (Windows). Otherwise, an already-completed future of null.
     private fun startPrismExeLookupAsync(): CompletableFuture<String?> {
         val os = System.getProperty("os.name")?.lowercase() ?: return CompletableFuture.completedFuture(null)
         if (!os.contains("win")) return CompletableFuture.completedFuture(null)
@@ -199,7 +199,7 @@ object IsolatedMultiMCUpdater {
         }
     }
 
-    // Tente de relancer en utilisant un chemin déjà résolu si dispo ; sinon, essaie quand même via PATH.
+    // Tries to relaunch using an already-resolved path if available; otherwise falls back to PATH.
     private fun tryRelaunchWindowsWithExe(preResolvedExe: String?): Boolean {
         val os = System.getProperty("os.name")?.lowercase() ?: return false
         if (!os.contains("win")) return false
@@ -221,7 +221,7 @@ object IsolatedMultiMCUpdater {
 
         return try {
             val pb = ProcessBuilder(cmd).inheritIO()
-            // Si exe est un chemin absolu, définir le working dir = dossier du .exe (utile pour certaines installs)
+            // If exe is an absolute path, set working dir to the .exe's folder (needed by some installs)
             if (preResolvedExe != null) {
                 val parent = try { Paths.get(preResolvedExe).parent } catch (_: Exception) { null }
                 if (parent != null) pb.directory(parent.toFile())
@@ -235,18 +235,18 @@ object IsolatedMultiMCUpdater {
     }
 
     /**
-     * Recherche l'exécutable Prism sur Windows :
+     * Looks up the Prism executable on Windows:
      * 1) override via -Dpackwiz.prism.exe
-     * 2) Registre Windows (InstallLocation / DisplayIcon pour "Prism Launcher")
-     * 3) Emplacements standard (%ProgramFiles%, %ProgramFiles(x86)%, %LocalAppData%)
-     * Retourne le chemin .exe si trouvé et existant, sinon null.
+     * 2) Windows Registry (InstallLocation / DisplayIcon for "Prism Launcher")
+     * 3) Standard locations (%ProgramFiles%, %ProgramFiles(x86)%, %LocalAppData%)
+     * Returns the .exe path if found and it exists, otherwise null.
      */
     private fun findPrismExeWindows(): String? {
-        // 1) override explicite
+        // 1) explicit override
         val override = System.getProperty("packwiz.prism.exe")
         if (!override.isNullOrBlank() && Files.exists(Paths.get(override))) return override
 
-        // 2) Registre (HKLM/HKCU + WOW6432Node)
+        // 2) Registry (HKLM/HKCU + WOW6432Node)
         val regPaths = arrayOf(
             "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
             "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall",
@@ -257,7 +257,7 @@ object IsolatedMultiMCUpdater {
             if (exeFromReg != null) return exeFromReg
         }
 
-        // 3) Emplacements standard
+        // 3) Standard locations
         val pf = System.getenv("ProgramFiles") ?: "C:\\Program Files"
         val pf86 = System.getenv("ProgramFiles(x86)") ?: "C:\\Program Files (x86)"
         val localApp = System.getenv("LocalAppData") ?: "${System.getProperty("user.home")}\\AppData\\Local"
@@ -275,13 +275,13 @@ object IsolatedMultiMCUpdater {
             if (Files.exists(p)) return p.toString()
         }
 
-        // Dernière chance : s'il est dans le PATH, ProcessBuilder le trouvera
+        // Last resort: if it's on PATH, ProcessBuilder will find it
         return "PrismLauncher.exe"
     }
 
     /**
-     * Parcourt le registre sous 'regRoot' pour trouver une clé avec DisplayName "Prism Launcher",
-     * puis lit InstallLocation / DisplayIcon pour en déduire PrismLauncher.exe.
+     * Walks the registry under 'regRoot' to find a key with DisplayName "Prism Launcher",
+     * then reads InstallLocation / DisplayIcon to derive PrismLauncher.exe.
      */
     private fun findPrismExeFromRegistry(regRoot: String): String? {
         try {
@@ -293,27 +293,27 @@ object IsolatedMultiMCUpdater {
                 val keys = ArrayList<String>()
                 while (br.readLine().also { line = it } != null) {
                     val l = line!!.trim()
-                    // Chaque bloc ressemble à :
+                    // Each block looks like:
                     // HKEY_...\{GUID}\n    DisplayName    REG_SZ    Prism Launcher
                     if (l.startsWith("HKEY_")) {
                         keys.add(l)
                     } else if (l.contains("DisplayName") && l.contains("Prism Launcher")) {
-                        // Clé précédente correspondante
+                        // Matching preceding key
                         val key = keys.lastOrNull() ?: continue
-                        // Essayer d'obtenir InstallLocation
+                        // Try InstallLocation first
                         val install = queryRegValue(key, "InstallLocation")
                         if (!install.isNullOrBlank()) {
                             val exe = Paths.get(install, "PrismLauncher.exe")
                             if (Files.exists(exe)) return exe.toString()
                         }
-                        // Sinon DisplayIcon
+                        // Otherwise DisplayIcon
                         val icon = queryRegValue(key, "DisplayIcon")
                         if (!icon.isNullOrBlank()) {
-                            // DisplayIcon peut contenir "C:\...\PrismLauncher.exe,0"
+                            // DisplayIcon may contain "C:\...\PrismLauncher.exe,0"
                             val cleaned = icon.trim().trim('"').split(",")[0]
                             val exe = Paths.get(cleaned)
                             if (Files.exists(exe)) return exe.toString()
-                            // Si c'est un dossier, tenter PrismLauncher.exe dedans
+                            // If it's a folder, try PrismLauncher.exe inside it
                             if (Files.isDirectory(exe)) {
                                 val guess = exe.resolve("PrismLauncher.exe")
                                 if (Files.exists(guess)) return guess.toString()
@@ -323,12 +323,12 @@ object IsolatedMultiMCUpdater {
                 }
             }
         } catch (_: Exception) {
-            // pas de registre ou pas de droits : on ignore
+            // no registry access or no permissions: ignore
         }
         return null
     }
 
-    /** Lit une valeur du registre Windows pour la clé et le nom donnés. */
+    /** Reads a value from the Windows registry for the given key and name. */
     private fun queryRegValue(key: String, valueName: String): String? {
         return try {
             val p = ProcessBuilder("reg", "query", key, "/v", valueName)
@@ -340,11 +340,11 @@ object IsolatedMultiMCUpdater {
                 while (br.readLine().also { line = it } != null) out.append(line).append('\n')
             }
             val text = out.toString()
-            // Format attendu : <valueName>    REG_SZ    <valeur>
+            // Expected format: <valueName>    REG_SZ    <value>
             val idx = text.indexOf(valueName)
             if (idx >= 0) {
                 val tail = text.substring(idx + valueName.length)
-                val parts = tail.split(Regex("\\s{2,}")) // séparateurs d'espaces multiples
+                val parts = tail.split(Regex("\\s{2,}")) // multi-space separators
                 if (parts.size >= 3) {
                     return parts[2].trim()
                 }
