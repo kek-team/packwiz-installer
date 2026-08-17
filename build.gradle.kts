@@ -158,13 +158,13 @@ tasks.publish {
 
 tasks.compileKotlin {
 	kotlinOptions {
-		jvmTarget = "17"
+		jvmTarget = "1.8"
 		freeCompilerArgs = listOf("-Xjvm-default=all", "-Xallow-result-return-type", "-opt-in=kotlin.io.path.ExperimentalPathApi", "-Xlambdas=indy")
 	}
 }
 tasks.compileTestKotlin {
 	kotlinOptions {
-		jvmTarget = "17"
+		jvmTarget = "1.8"
 		freeCompilerArgs = listOf("-Xjvm-default=all", "-Xallow-result-return-type", "-opt-in=kotlin.io.path.ExperimentalPathApi", "-Xlambdas=indy")
 	}
 }
