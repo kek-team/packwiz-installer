@@ -17,11 +17,8 @@ repositories {
 	mavenCentral()
 	google()
 	maven {
-        url = uri("https://storage.googleapis.com/r8-releases/raw")
+		url = uri("https://jitpack.io")
 	}
-    maven {
-        url = uri("https://jitpack.io")
-    }
 }
 
 val r8 by configurations.creating
@@ -41,9 +38,9 @@ dependencies {
 	implementation("com.squareup.okio:okio:3.1.0")
 	implementation(kotlin("stdlib-jdk8"))
 	implementation("com.squareup.okhttp3:okhttp:4.10.0")
-	implementation("cc.ekblad:4koma:1.2.0")
+	implementation("cc.ekblad:4koma:1.1.0")
 
-	r8("com.android.tools:r8:8.2.24")
+	r8("com.android.tools:r8:3.3.28")
 }
 
 application {
